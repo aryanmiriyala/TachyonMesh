@@ -1,0 +1,219 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  labels:
+    app: grafana
+    project: tachyonmesh
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus-service:9090
+        isDefault: true
+        editable: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-providers
+  labels:
+    app: grafana
+    project: tachyonmesh
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: "TachyonMesh"
+        orgId: 1
+        folder: ""
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards
+          foldersFromFilesStructure: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  labels:
+    app: grafana
+    project: tachyonmesh
+data:
+  tachyonmesh-traffic.json: |
+    {
+      "uid": "tachyonmesh-traffic",
+      "title": "TachyonMesh Traffic",
+      "tags": ["tachyonmesh", "envoy", "traffic"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "5s",
+      "time": {
+        "from": "now-15m",
+        "to": "now"
+      },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Total Request Rate (RPS)",
+          "description": "Requests per second hitting the Envoy proxy, broken down by response code class.",
+          "type": "timeseries",
+          "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisLabel": "req/s",
+                "drawStyle": "line",
+                "fillOpacity": 15,
+                "lineWidth": 2,
+                "pointSize": 5,
+                "showPoints": "auto",
+                "stacking": { "mode": "none" }
+              },
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_total{envoy_cluster_name=\"backend_cluster\"}[1m]))",
+              "legendFormat": "Total RPS",
+              "datasource": { "type": "prometheus", "uid": "" }
+            },
+            {
+              "refId": "B",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_xx{envoy_cluster_name=\"backend_cluster\", envoy_response_code_class=\"2\"}[1m]))",
+              "legendFormat": "2xx RPS",
+              "datasource": { "type": "prometheus", "uid": "" }
+            }
+          ],
+          "options": {
+            "legend": { "displayMode": "list", "placement": "bottom" },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          }
+        },
+        {
+          "id": 2,
+          "title": "Upstream Latency - P95 / P99",
+          "description": "P95 and P99 latency of requests from Envoy to the backend cluster, computed from the envoy_cluster_upstream_rq_time histogram.",
+          "type": "timeseries",
+          "gridPos": { "h": 9, "w": 12, "x": 0, "y": 9 },
+          "datasource": { "type": "prometheus", "uid": "" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisLabel": "ms",
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 2,
+                "pointSize": 5,
+                "showPoints": "auto",
+                "stacking": { "mode": "none" }
+              },
+              "unit": "ms"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.95, sum(rate(envoy_cluster_upstream_rq_time_bucket{envoy_cluster_name=\"backend_cluster\"}[1m])) by (le))",
+              "legendFormat": "P95 Latency",
+              "datasource": { "type": "prometheus", "uid": "" }
+            },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.99, sum(rate(envoy_cluster_upstream_rq_time_bucket{envoy_cluster_name=\"backend_cluster\"}[1m])) by (le))",
+              "legendFormat": "P99 Latency",
+              "datasource": { "type": "prometheus", "uid": "" }
+            }
+          ],
+          "options": {
+            "legend": { "displayMode": "list", "placement": "bottom" },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          }
+        },
+        {
+          "id": 3,
+          "title": "HTTP Error Rates (4xx / 5xx)",
+          "description": "Rate of 4xx and 5xx responses from the backend cluster, indicating client and server errors.",
+          "type": "timeseries",
+          "gridPos": { "h": 9, "w": 12, "x": 12, "y": 9 },
+          "datasource": { "type": "prometheus", "uid": "" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisLabel": "errors/s",
+                "drawStyle": "line",
+                "fillOpacity": 20,
+                "lineWidth": 2,
+                "pointSize": 5,
+                "showPoints": "auto",
+                "stacking": { "mode": "none" }
+              },
+              "unit": "reqps",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 1 },
+                  { "color": "red", "value": 5 }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "5xx Errors" },
+                "properties": [
+                  { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }
+                ]
+              },
+              {
+                "matcher": { "id": "byName", "options": "4xx Errors" },
+                "properties": [
+                  { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_xx{envoy_cluster_name=\"backend_cluster\", envoy_response_code_class=\"5\"}[1m]))",
+              "legendFormat": "5xx Errors",
+              "datasource": { "type": "prometheus", "uid": "" }
+            },
+            {
+              "refId": "B",
+              "expr": "sum(rate(envoy_cluster_upstream_rq_xx{envoy_cluster_name=\"backend_cluster\", envoy_response_code_class=\"4\"}[1m]))",
+              "legendFormat": "4xx Errors",
+              "datasource": { "type": "prometheus", "uid": "" }
+            }
+          ],
+          "options": {
+            "legend": { "displayMode": "list", "placement": "bottom" },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          }
+        }
+      ],
+      "templating": { "list": [] },
+      "annotations": { "list": [] }
+    }
