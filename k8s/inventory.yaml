@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory
+  labels:
+    app: inventory
+    project: tachyonmesh
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: inventory
+  template:
+    metadata:
+      labels:
+        app: inventory
+        project: tachyonmesh
+    spec:
+      containers:
+        - name: inventory
+          image: tachyonmesh-inventory:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8082
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-service
+  labels:
+    app: inventory
+    project: tachyonmesh
+spec:
+  type: ClusterIP
+  selector:
+    app: inventory
+  ports:
+    - port: 8082
+      targetPort: 8082
+      protocol: TCP

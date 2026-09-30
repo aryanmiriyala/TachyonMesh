@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
-	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,8 +14,9 @@ import (
 )
 
 type ProcessResponse struct {
-	Status    string `json:"status"`
-	Processed bool   `json:"processed"`
+	Status    string      `json:"status"`
+	Processed bool        `json:"processed"`
+	Inventory interface{} `json:"inventory"`
 }
 
 type HealthResponse struct {
@@ -32,25 +33,52 @@ func init() {
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	resp := HealthResponse{
+	json.NewEncoder(w).Encode(HealthResponse{
 		Status: "ok",
 		Uptime: time.Since(startTime).String(),
-	}
-	json.NewEncoder(w).Encode(resp)
+	})
 }
 
 func processHandler(w http.ResponseWriter, r *http.Request) {
-	// Simulate variable workload: 20ms to 150ms
-	delay := time.Duration(20+rand.Intn(131)) * time.Millisecond
-	time.Sleep(delay)
+	reqID := r.Header.Get("X-Request-Id")
+	log.Printf("[Gateway] Processing request: %s", reqID)
+
+	// Call downstream inventory service
+	inventoryURL := os.Getenv("INVENTORY_URL")
+	if inventoryURL == "" {
+		inventoryURL = "http://inventory-service:8082/inventory"
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, err := http.NewRequest("GET", inventoryURL, nil)
+	if err != nil {
+		http.Error(w, "Failed to create request", http.StatusInternalServerError)
+		return
+	}
+
+	// Propagate Trace Context and Request ID
+	req.Header.Set("X-Request-Id", reqID)
+	req.Header.Set("Traceparent", r.Header.Get("Traceparent"))
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("[Gateway] Downstream error: %v", err)
+		http.Error(w, "Inventory service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var inventoryData interface{}
+	json.Unmarshal(body, &inventoryData)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	resp := ProcessResponse{
+	json.NewEncoder(w).Encode(ProcessResponse{
 		Status:    "success",
 		Processed: true,
-	}
-	json.NewEncoder(w).Encode(resp)
+		Inventory: inventoryData,
+	})
 }
 
 func main() {
@@ -71,15 +99,13 @@ func main() {
 		IdleTimeout:  30 * time.Second,
 	}
 
-	// Start server in a goroutine
 	go func() {
-		log.Printf("TachyonMesh backend starting on :%s", port)
+		log.Printf("Gateway service starting on :%s", port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server failed: %v", err)
 		}
 	}()
 
-	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	sig := <-quit

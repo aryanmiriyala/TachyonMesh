@@ -48,7 +48,7 @@ data:
                             - match:
                                 prefix: "/api"
                               route:
-                                cluster: backend_cluster
+                                cluster: gateway_cluster
                                 timeout: 2s
                                 retry_policy:
                                   retry_on: "5xx,connect-failure,refused-stream"
@@ -59,7 +59,7 @@ data:
                             - match:
                                 prefix: "/health"
                               route:
-                                cluster: backend_cluster
+                                cluster: gateway_cluster
                     http_filters:
                       - name: envoy.filters.http.fault
                         typed_config:
@@ -101,18 +101,18 @@ data:
                           "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
 
       clusters:
-        - name: backend_cluster
+        - name: gateway_cluster
           connect_timeout: 0.25s
           type: STRICT_DNS
           lb_policy: ROUND_ROBIN
           load_assignment:
-            cluster_name: backend_cluster
+            cluster_name: gateway_cluster
             endpoints:
               - lb_endpoints:
                   - endpoint:
                       address:
                         socket_address:
-                          address: backend-service
+                          address: gateway-service
                           port_value: 8081
           circuit_breakers:
             thresholds:

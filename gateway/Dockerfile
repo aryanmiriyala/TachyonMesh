@@ -9,13 +9,13 @@ RUN go mod download
 
 COPY main.go ./
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /tachyon-backend main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /tachyon-gateway main.go
 
 # -- Runtime stage --
 FROM scratch
 
-COPY --from=builder /tachyon-backend /tachyon-backend
+COPY --from=builder /tachyon-gateway /tachyon-gateway
 
 EXPOSE 8081
 
-ENTRYPOINT ["/tachyon-backend"]
+ENTRYPOINT ["/tachyon-gateway"]
