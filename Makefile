@@ -77,3 +77,14 @@ status:
 	@echo ""
 	@echo "==> Services:"
 	@kubectl get svc -l project=tachyonmesh
+
+# ---------------------------------------------------------------
+# Chaos Engineering (Fault Injection)
+# ---------------------------------------------------------------
+chaos-abort:
+	@echo "==> Running chaos test: Injecting 50% HTTP 503 Aborts..."
+	hey -z 30s -q 20 -c 20 -H "x-envoy-fault-abort-request: 503" -H "x-envoy-fault-abort-request-percentage: 50" http://localhost:8080/api/process
+
+chaos-delay:
+	@echo "==> Running chaos test: Injecting 3s Latency Delay..."
+	hey -z 30s -q 20 -c 20 -H "x-envoy-fault-delay-request: 3000" -H "x-envoy-fault-delay-request-percentage: 100" http://localhost:8080/api/process

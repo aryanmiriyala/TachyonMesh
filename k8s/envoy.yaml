@@ -23,6 +23,22 @@ data:
                     stat_prefix: ingress_http
                     generate_request_id: true
                     codec_type: AUTO
+                    access_log:
+                      - name: envoy.access_loggers.stdout
+                        typed_config:
+                          "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                          log_format:
+                            json_format:
+                              start_time: "%START_TIME%"
+                              method: "%REQ(:METHOD)%"
+                              path: "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
+                              response_code: "%RESPONSE_CODE%"
+                              response_flags: "%RESPONSE_FLAGS%"
+                              duration_ms: "%DURATION%"
+                              upstream_service_time_ms: "%RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)%"
+                              upstream_cluster: "%UPSTREAM_CLUSTER%"
+                              upstream_host: "%UPSTREAM_HOST%"
+                              request_id: "%REQ(X-REQUEST-ID)%"
                     route_config:
                       name: local_route
                       virtual_hosts:
@@ -33,18 +49,60 @@ data:
                                 prefix: "/api"
                               route:
                                 cluster: backend_cluster
+                                timeout: 2s
+                                retry_policy:
+                                  retry_on: "5xx,connect-failure,refused-stream"
+                                  num_retries: 3
+                                  retry_back_off:
+                                    base_interval: 0.025s
+                                    max_interval: 0.250s
                             - match:
                                 prefix: "/health"
                               route:
                                 cluster: backend_cluster
                     http_filters:
+                      - name: envoy.filters.http.fault
+                        typed_config:
+                          "@type": type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault
+                          abort:
+                            header_abort: {}
+                            percentage:
+                              numerator: 100
+                              denominator: HUNDRED
+                          delay:
+                            header_delay: {}
+                            percentage:
+                              numerator: 100
+                              denominator: HUNDRED
+                      - name: envoy.filters.http.local_ratelimit
+                        typed_config:
+                          "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+                          stat_prefix: http_local_rate_limiter
+                          token_bucket:
+                            max_tokens: 100
+                            tokens_per_fill: 100
+                            fill_interval: 1s
+                          filter_enabled:
+                            runtime_key: local_rate_limit_enabled
+                            default_value:
+                              numerator: 100
+                              denominator: HUNDRED
+                          filter_enforced:
+                            runtime_key: local_rate_limit_enforced
+                            default_value:
+                              numerator: 100
+                              denominator: HUNDRED
+                          response_headers_to_add:
+                            - header:
+                                key: "x-ratelimit-limit"
+                                value: "100"
                       - name: envoy.filters.http.router
                         typed_config:
                           "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
 
       clusters:
         - name: backend_cluster
-          connect_timeout: 5s
+          connect_timeout: 0.25s
           type: STRICT_DNS
           lb_policy: ROUND_ROBIN
           load_assignment:
@@ -56,6 +114,20 @@ data:
                         socket_address:
                           address: backend-service
                           port_value: 8081
+          circuit_breakers:
+            thresholds:
+              - priority: DEFAULT
+                max_connections: 100
+                max_pending_requests: 50
+                max_requests: 200
+                max_retries: 3
+                track_remaining: true
+          outlier_detection:
+            consecutive_5xx: 3
+            interval: 5s
+            base_ejection_time: 30s
+            max_ejection_percent: 50
+            enforcing_consecutive_5xx: 100
 
     admin:
       address:
